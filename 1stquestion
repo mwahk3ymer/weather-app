@@ -1,0 +1,73 @@
+import torch
+import torch.nn as nn
+
+class WeatherPredictor(nn.Module):
+    def __init__(self, geo_features, weather_features, hidden_size=128):
+        super().__init__()
+
+        # Process geographic features
+        self.geo_net = nn.Sequential(
+            nn.Linear(geo_features, 32),
+            nn.ReLU()
+        )
+
+        # Process historical weather data
+        self.weather_lstm = nn.LSTM(
+            input_size=weather_features,
+            hidden_size=64,
+            batch_first=True
+        )
+
+        # Process satellite image features
+        self.cnn = nn.Sequential(
+            nn.Conv2d(3, 16, kernel_size=3, padding=1),
+            nn.ReLU(),
+            nn.MaxPool2d(2),
+
+            nn.Conv2d(16, 32, kernel_size=3, padding=1),
+            nn.ReLU(),
+            nn.MaxPool2d(2),
+
+            nn.Flatten()
+        )
+
+        # Final prediction layer
+        self.fc = nn.Linear(32 + 64 + 2048, hidden_size)
+        self.output = nn.Linear(hidden_size, 1)
+
+    def forward(self, geo, satellite, weather_history):
+
+        geo_features = self.geo_net(geo)
+
+        _, (weather_features, _) = self.weather_lstm(weather_history)
+        weather_features = weather_features.squeeze(0)
+
+        satellite_features = self.cnn(satellite)
+
+        combined = torch.cat(
+            [geo_features, weather_features, satellite_features],
+            dim=1
+        )
+
+        hidden = torch.relu(self.fc(combined))
+
+        prediction = self.output(hidden)
+
+        return prediction
+
+
+# Example inputs
+batch_size = 8
+
+geo = torch.randn(batch_size, 10)              # latitude, longitude, elevation, etc.
+satellite = torch.randn(batch_size, 3, 64, 64) # RGB satellite image
+weather_history = torch.randn(batch_size, 7, 5) # 7-day history
+
+model = WeatherPredictor(
+    geo_features=10,
+    weather_features=5
+)
+
+prediction = model(geo, satellite, weather_history)
+
+print("Tomorrow's prediction shape:", prediction.shape)
